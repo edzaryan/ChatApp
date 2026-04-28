@@ -2,6 +2,7 @@ import type { HubConnection } from "@microsoft/signalr";
 import { createConnection } from "../lib/signalr";
 import { useEffect, useState } from "react";
 import Avatar from "../components/Avatar";
+import Header from "../components/layout/Header";
 
 type Message = {
   user: string;
@@ -40,8 +41,8 @@ function Chat() {
         setMessages(prev => [
             ...prev,
             {
-            ...msg,
-            isMine: msg.user === currentUser
+              ...msg,
+              isMine: msg.user === currentUser
             }
         ]);
     });
@@ -85,56 +86,62 @@ function Chat() {
   };
 
   return (
-    <div className="p-6 text-white bg-gray-900 min-h-screen">
-      <h1 className="text-2xl mb-4">Chat</h1>
+    <div className="min-h-screen">
+      <Header />
 
-      <div className="mb-4 flex gap-2">
-        <select
-          className="bg-gray-800 p-2"
-          value={room}
-          onChange={(e) => handleRoomChange(e.target.value)}
-        >
-          <option value="General">General</option>
-          <option value="Gaming">Gaming</option>
-          <option value="Dev">Dev</option>
-        </select>
-      </div>
+      <div className="flex justify-center">
+        <div className="text-white w-[1000px]">
+          <h1 className="text-2xl mb-4">Chat</h1>
 
-      <div className="mb-4 space-y-2">
-        {messages.map((m, i) => (
-            <div 
-                key={i} 
-                className={`flex ${m.isMine ? "justify-end" : "justify-start"} items-start gap-3`}
+          <div className="mb-4 flex gap-2">
+            <select
+              className="bg-gray-800 p-2"
+              value={room}
+              onChange={(e) => handleRoomChange(e.target.value)}
             >
-                <div className={`flex gap-3 ${m.isMine ? "flex-row-reverse" : ""}`}>
-                    <Avatar name={m.user ?? "Unknown"} imageUrl={m.avatar} />
-                    <div className="flex flex-col">
-                        <span className="text-sm text-gray-400">
-                            {m.user}
-                        </span>
-                        <div 
-                            className={`px-4 py-2 rounded-2xl max-w-xs ${m.isMine ? "bg-green-500" : "bg-gray-800"}`}>
-                            {m.text}
+              <option value="General">General</option>
+              <option value="Gaming">Gaming</option>
+              <option value="Dev">Dev</option>
+            </select>
+          </div>
+
+          <div className="mb-4 space-y-2">
+            {messages.map((m, i) => (
+                <div 
+                    key={i} 
+                    className={`flex ${m.isMine ? "justify-end" : "justify-start"} items-start gap-3`}
+                >
+                    <div className={`flex gap-3 ${m.isMine ? "flex-row-reverse" : ""}`}>
+                        <Avatar name={m.user ?? "Unknown"} imageUrl={m.avatar} />
+                        <div className="flex flex-col">
+                            <span className="text-sm text-gray-400">
+                                {m.user}
+                            </span>
+                            <div 
+                                className={`px-4 py-2 rounded-2xl max-w-xs ${m.isMine ? "bg-green-500" : "bg-gray-800"}`}>
+                                {m.text}
+                            </div>
                         </div>
                     </div>
                 </div>
-            </div>
-        ))}
-      </div>
+            ))}
+          </div>
 
-      <div className="flex gap-2">
-        <input
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          className="p-2 bg-gray-800 flex-1"
-        />
-        <button
-          onClick={sendMessage}
-          disabled={!input}
-          className="bg-green-500 px-4 disabled:opacity-50"
-        >
-          Send
-        </button>
+          <div className="flex gap-2">
+            <input
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              className="p-2 bg-gray-800 flex-1"
+            />
+            <button
+              onClick={sendMessage}
+              disabled={!input}
+              className="bg-green-500 px-4 disabled:opacity-50"
+            >
+              Send
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );

@@ -28,15 +28,15 @@ function Login() {
     try {
       setServerError('');
 
-        const res = await api.post('/auth/login', {
-            username: data.username,
-            password: data.password,
-        });
+      const res = await api.post('/auth/login', {
+          username: data.username,
+          password: data.password,
+      });
 
-        localStorage.setItem('username', data.username);
-        localStorage.setItem('token', res.data.token);
+      localStorage.setItem('username', data.username);
+      localStorage.setItem('token', res.data.token);
 
-        navigate('/chat');
+      navigate('/chat');
     } catch (err: any) {
       setServerError(err.response?.data || 'Invalid username or password');
     }
