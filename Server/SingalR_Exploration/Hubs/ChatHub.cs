@@ -59,7 +59,7 @@ namespace SingalR_Exploration.Hubs
 
         public async Task SendRoomMessage(string roomName, string message)
         {
-            if (string.IsNullOrWhiteSpace(message) || message.Length > 300)
+            if (string.IsNullOrWhiteSpace(message) || message.Length > 2000)
                 return;
 
             var currentUser = Context.User?.Identity?.Name ?? "Anonymous";

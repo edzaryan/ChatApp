@@ -84,7 +84,7 @@ function Register() {
           <button
             type="submit"
             disabled={isSubmitting}
-            className="w-full bg-green-500 hover:bg-green-600 transition p-3 rounded-lg font-semibold"
+            className="w-full bg-green-500 hover:bg-green-600 transition p-3 rounded-lg font-semibold cursor-pointer"
           >
             {isSubmitting ? 'Creating...' : 'Register'}
           </button>
