@@ -1,6 +1,6 @@
 import type { HubConnection } from "@microsoft/signalr";
 import { createConnection } from "../lib/signalr";
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import Avatar from "../components/Avatar";
 import Header from "../components/layout/Header";
 
@@ -10,13 +10,15 @@ type Message = {
   avatar?: string;
   createdAt?: string;
   isMine?: boolean;
-}
+};
 
 function Chat() {
   const [connection, setConnection] = useState<HubConnection | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [room, setRoom] = useState("General");
   const [input, setInput] = useState("");
+
+  const containerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -36,26 +38,26 @@ function Chat() {
       .catch(err => console.error(err));
 
     conn.on("ReceiveRoomMessage", (msg: Message) => {
-        const currentUser = localStorage.getItem("username");
+      const currentUser = localStorage.getItem("username");
 
-        setMessages(prev => [
-            ...prev,
-            {
-              ...msg,
-              isMine: msg.user === currentUser
-            }
-        ]);
+      setMessages(prev => [
+        ...prev,
+        {
+          ...msg,
+          isMine: msg.user === currentUser
+        }
+      ]);
     });
 
     conn.on("LoadMessages", (msgs: Message[]) => {
-        const currentUser = localStorage.getItem("username");
+      const currentUser = localStorage.getItem("username");
 
-        const normalized = msgs.map(m => ({
-            ...m,
-            isMine: m.user?.toLowerCase() === currentUser?.toLowerCase()
-        }));
+      const normalized = msgs.map(m => ({
+        ...m,
+        isMine: m.user?.toLowerCase() === currentUser?.toLowerCase()
+      }));
 
-        setMessages(normalized);
+      setMessages(normalized);
     });
 
     return () => {
@@ -68,6 +70,21 @@ function Chat() {
     };
   }, []);
 
+  useLayoutEffect(() => {
+    const el = containerRef.current;
+    if (!el || messages.length === 0) return;
+
+    const lastMessage = messages[messages.length - 1];
+
+    const isNearBottom =
+      el.scrollHeight - el.scrollTop - el.clientHeight < 100;
+
+      if (lastMessage.isMine || isNearBottom) {
+        el.scrollTop = el.scrollHeight;
+      }
+
+  }, [messages]);
+
   const handleRoomChange = async (newRoom: string) => {
     if (!connection) return;
 
@@ -78,7 +95,7 @@ function Chat() {
     await connection.invoke("LoadRoomHistory", newRoom);
   };
 
-  const sendMessage = async () => {
+  const handleSubmit = async () => {
     if (!input || !connection) return;
 
     await connection.invoke("SendRoomMessage", room, input);
@@ -91,7 +108,7 @@ function Chat() {
 
       <div className="flex justify-center">
         <div className="text-white w-[1000px]">
-          <h1 className="text-2xl mb-4">Chat</h1>
+          <h1 className="text-2xl mb-3">Chat</h1>
 
           <div className="mb-4 flex gap-2">
             <select
@@ -105,41 +122,48 @@ function Chat() {
             </select>
           </div>
 
-          <div className="mb-4 space-y-2">
-            {messages.map((m, i) => (
-                <div 
-                    key={i} 
-                    className={`flex ${m.isMine ? "justify-end" : "justify-start"} items-start gap-3`}
-                >
-                    <div className={`flex gap-3 ${m.isMine ? "flex-row-reverse" : ""}`}>
-                        <Avatar name={m.user ?? "Unknown"} imageUrl={m.avatar} />
-                        <div className="flex flex-col">
-                            <span className="text-sm text-gray-400">
-                                {m.user}
-                            </span>
-                            <div 
-                                className={`px-4 py-2 rounded-2xl max-w-xs ${m.isMine ? "bg-green-500" : "bg-gray-800"}`}>
-                                {m.text}
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            ))}
-          </div>
-
-          <div className="flex gap-2">
-            <input
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              className="p-2 bg-gray-800 flex-1"
-            />
-            <button
-              onClick={sendMessage}
-              disabled={!input}
-              className="bg-green-500 px-4 disabled:opacity-50"
+          <div className="mb-4 space-y-2 shadow-sm rounded-xl">
+            <div
+              ref={containerRef}
+              className="overflow-y-auto h-[450px] p-4"
             >
-              Send
-            </button>
+              {messages.map((m, i) => (
+                <div
+                  key={i}
+                  className={`flex ${m.isMine ? "justify-end" : "justify-start"} items-start gap-3 mb-2`}
+                >
+                  <div className={`flex gap-3 ${m.isMine ? "flex-row-reverse" : ""}`}>
+                    <Avatar name={m.user ?? "Unknown"} imageUrl={m.avatar} />
+
+                    <div className="flex flex-col">
+                      <span className="text-sm text-gray-400">
+                        {m.user}
+                      </span>
+
+                      <div
+                        className={`px-4 py-2 rounded-full text-[15px] max-w-xs ${
+                          m.isMine
+                            ? "bg-[#13CF13] text-white"
+                            : "bg-[#F0F0F0] text-[#080809]"
+                        }`}
+                      >
+                        {m.text}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex gap-2 p-3">
+              <input
+                placeholder="Aa"
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
+                className="p-2 bg-[#ebedef] text-gray-600 flex-1 text-[15px] rounded-full py-2 px-3 outline-none"
+              />
+            </div>
           </div>
         </div>
       </div>
