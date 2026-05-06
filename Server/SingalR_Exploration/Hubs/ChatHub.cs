@@ -104,5 +104,21 @@ namespace SingalR_Exploration.Hubs
 
             await Clients.Caller.SendAsync("LoadMessages", result);
         }
+
+        public async Task Typing(string roomName)
+        {
+            var username = Context.User?.Identity?.Name ?? "Anonymous";
+
+            var dbUser = await _db.Users
+                .AsNoTracking()
+                .FirstOrDefaultAsync(u => u.Username == username);
+
+            await Clients.OthersInGroup(roomName)
+                .SendAsync("UserTyping", new TypingDTO
+                {
+                    User = username,
+                    Avatar = dbUser?.Avatar
+                });
+        }
     }
 }

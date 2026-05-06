@@ -1,9 +1,11 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { HubConnection } from "@microsoft/signalr";
+import { getBubbleRadius } from "../utils/chatUtils";
+import EmojiPicker from "../components/EmojiPicker";
 import { createConnection } from "../lib/signalr";
 import Header from "../components/layout/Header";
 import Avatar from "../components/Avatar";
-import { getBubbleRadius } from "../utils/chatUtils";
+import TypingIndicator from "../components/TypingIndicator";
 
 type Message = {
   user: string;
@@ -18,8 +20,31 @@ function Chat() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [room, setRoom] = useState("General");
   const [input, setInput] = useState("");
+  const [showPicker, setShowPicker] = useState(false);
+  const [error, setError] = useState("");
+  const [typingUser, setTypingUser] = useState<{ user: string; avatar?: string; } | null>(null);
 
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const pickerRef = useRef<HTMLDivElement | null>(null);
+  const inputRef = useRef<HTMLDivElement | null>(null);
+  const typingTimeoutRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        pickerRef.current &&
+        !pickerRef.current.contains(event.target as Node)
+      ) {
+        setShowPicker(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
 
   useEffect(() => {
     let isMounted = true;
@@ -42,6 +67,18 @@ function Chat() {
       ]);
     });
 
+    conn.on("UserTyping", (user: string) => {
+      setTypingUser(user);
+
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+      }
+
+      typingTimeoutRef.current = window.setTimeout(() => {
+        setTypingUser("");
+      }, 1000);
+    });
+
     conn.on("LoadMessages", (msgs: Message[]) => {
       const currentUser = localStorage.getItem("username");
       const normalized = msgs.map(m => ({
@@ -53,8 +90,11 @@ function Chat() {
 
     return () => {
       isMounted = false;
+
       conn.off("ReceiveRoomMessage");
       conn.off("LoadMessages");
+      conn.off("UserTyping");
+
       conn.stop();
     };
   }, []);
@@ -83,10 +123,44 @@ function Chat() {
     await connection.invoke("LoadRoomHistory", newRoom);
   };
 
+  const handleEmoji = (emoji: string) => {
+    if (!inputRef.current) return;
+
+    inputRef.current.textContent += emoji;
+
+    setInput(inputRef.current.textContent);
+
+    inputRef.current.focus();
+
+    const selection = window.getSelection();
+    const range = document.createRange();
+
+    range.selectNodeContents(inputRef.current);
+    range.collapse(false);
+
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+  };
+
   const handleSubmit = async () => {
-    if (!input || !connection) return;
+    if (!connection) return;
+
+    if (!input.trim()) return;
+
+    if (input.length > 2000) {
+      setError("Message is too long.");
+      return;
+    }
+
+    setError("");
+
     await connection.invoke("SendRoomMessage", room, input);
+
     setInput("");
+
+    if (inputRef.current) {
+      inputRef.current.textContent = "";
+    }
   };
 
   return (
@@ -141,21 +215,26 @@ function Chat() {
                 return (
                   <div
                     key={i}
-                    className={`flex ${m.isMine ? "justify-end" : "justify-start"} items-end gap-3 ${marginBottom}`}
+                    className={`w-full flex ${marginBottom} ${
+                      m.isMine ? "justify-end" : "justify-start"
+                    }`}
                   >
-                    <div className={`flex gap-3 ${m.isMine ? "flex-row-reverse" : ""}`}>
-
+                    <div className={`flex items-end gap-4 ${m.isMine ? "flex-row-reverse" : ""}`}>
                       <div className="w-8 h-8 flex-shrink-0">
-                        {showAvatar && <Avatar name={m.user ?? "Unknown"} imageUrl={m.avatar} />}
+                        {showAvatar && (
+                          <Avatar
+                            name={m.user ?? "Unknown"}
+                            imageUrl={m.avatar}
+                          />
+                        )}
                       </div>
 
-                      <div className={`flex flex-col ${m.isMine ? "items-end" : "items-start"}`}>
-                        {(groupPos === "first" || groupPos === "single") && (
-                          <span className="text-xs text-black mb-1">{m.user}</span>
-                        )}
+                      <div className={`flex flex-col items-${m.isMine ? "end" : "start"}`}>
                         <div
                           className={`px-4 py-2 text-[15px] max-w-xs break-all ${
-                            m.isMine ? "bg-[#13CF13] text-white" : "bg-gray-100 text-black shadow-sm"
+                            m.isMine
+                              ? "bg-[#13CF13] text-white"
+                              : "bg-gray-100 text-black shadow-sm"
                           }`}
                           style={{ borderRadius: bubbleRadius }}
                         >
@@ -167,33 +246,85 @@ function Chat() {
                   </div>
                 );
               })}
+
+              {typingUser && (
+                <div className="flex justify-start items-end gap-4 mb-2">
+
+                  <div className="w-8 h-8 flex-shrink-0">
+                    <Avatar
+                      name={typingUser.user}
+                      imageUrl={typingUser.avatar}
+                    />
+                  </div>
+
+                  <TypingIndicator />
+
+                </div>
+              )}
             </div>
 
-            <div className="p-3 border-t border-white/10 bg-white">
-              <div
-                contentEditable
-                role="textbox"
-                aria-multiline="true"
-                aria-placeholder="Aa"
-                onInput={(e) => {
-                  const el = e.currentTarget;
-                  const text = el.textContent || "";
+            <div className="p-3 border-white/10 bg-white">
+              {error && (
+                <div className="text-red-500 text-sm px-2 pb-2">
+                  {error}
+                </div>
+              )}
+              <div className="grid grid-cols-[1fr_auto] items-end rounded-[18px] bg-gray-100">
+                <div
+                  ref={inputRef}
+                  contentEditable
+                  role="textbox"
+                  aria-multiline="true"
+                  aria-placeholder="Aa"
+                  onInput={(e) => {
+                    const el = e.currentTarget;
+                    const text = el.textContent || "";
 
-                  if (text === "") {
-                    el.innerHTML = "";
-                  }
+                    if (text === "") {
+                      el.innerHTML = "";
+                    }
 
-                  setInput(text);
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) {
-                    e.preventDefault();
-                    handleSubmit();
-                    e.currentTarget.textContent = "";
-                  }
-                }}
-                className="caret-blue-500 w-full bg-gray-100 text-gray-800 font-medium text-[15px] rounded-3xl py-2 px-4 outline-none empty:before:content-[attr(aria-placeholder)] empty:before:text-gray-400"
-              />
+                    setInput(text);
+
+                    if (connection) {
+                      connection.invoke("Typing", room);
+                    }
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      handleSubmit();
+                      e.currentTarget.textContent = "";
+                    }
+                  }}
+                  className="caret-blue-500 text-gray-800 font-medium max-h-[200px] 
+                  text-[15px] px-3 py-2 outline-none empty:before:content-[attr(aria-placeholder)] 
+                  empty:before:text-gray-400 break-words whitespace-pre-wrap overflow-y-auto leading-tight"
+                />
+                <div ref={pickerRef} className="relative">
+                 <div
+                    className="
+                      w-[36px] h-[36px]
+                      rounded-full cursor-pointer
+                      grid justify-center items-center
+
+                      hover:bg-gray-300/40
+                      active:bg-gray-300/70
+                      focus:bg-gray-300/70
+
+                      transition duration-100
+                      select-none
+                    "
+                    onClick={() => setShowPicker(prev => !prev)}
+                  >
+                    😀
+                  </div>
+                  <EmojiPicker
+                    onSelect={handleEmoji}
+                    isOpened={showPicker}
+                  />
+                </div>
+              </div>
             </div>
           </div>
         </div>
