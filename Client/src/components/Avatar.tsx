@@ -4,7 +4,7 @@ type Props = {
 }
 
 function getInitials(name?: string) {
-    if (!name) return "?";
+    if (!name || typeof name !== 'string') return "?";
 
     return name
         .trim()

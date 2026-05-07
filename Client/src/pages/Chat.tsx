@@ -22,7 +22,12 @@ function Chat() {
   const [input, setInput] = useState("");
   const [showPicker, setShowPicker] = useState(false);
   const [error, setError] = useState("");
-  const [typingUser, setTypingUser] = useState<{ user: string; avatar?: string; } | null>(null);
+  const [ready, setReady] = useState(false);
+
+  const [typingUser, setTypingUser] = useState<{
+    user: string;
+    avatar?: string;
+  } | null>(null);
 
   const containerRef = useRef<HTMLDivElement | null>(null);
   const pickerRef = useRef<HTMLDivElement | null>(null);
@@ -48,43 +53,57 @@ function Chat() {
 
   useEffect(() => {
     let isMounted = true;
+
     const conn = createConnection();
 
-    conn.start()
+    conn
+      .start()
       .then(async () => {
         if (!isMounted) return;
+
         await conn.invoke("JoinRoom", "General");
         await conn.invoke("LoadRoomHistory", "General");
+
         setConnection(conn);
       })
       .catch(console.error);
 
     conn.on("ReceiveRoomMessage", (msg: Message) => {
       const currentUser = localStorage.getItem("username");
-      setMessages(prev => [
+
+      setMessages((prev) => [
         ...prev,
-        { ...msg, isMine: msg.user === currentUser }
+        {
+          ...msg,
+          isMine:
+            msg.user?.toLowerCase() ===
+            currentUser?.toLowerCase(),
+        },
       ]);
     });
 
     conn.on("UserTyping", (user: string) => {
-      setTypingUser(user);
+      setTypingUser({ user });
 
       if (typingTimeoutRef.current) {
         clearTimeout(typingTimeoutRef.current);
       }
 
       typingTimeoutRef.current = window.setTimeout(() => {
-        setTypingUser("");
+        setTypingUser(null);
       }, 1000);
     });
 
     conn.on("LoadMessages", (msgs: Message[]) => {
       const currentUser = localStorage.getItem("username");
-      const normalized = msgs.map(m => ({
+
+      const normalized = msgs.map((m) => ({
         ...m,
-        isMine: m.user?.toLowerCase() === currentUser?.toLowerCase()
+        isMine:
+          m.user?.toLowerCase() ===
+          currentUser?.toLowerCase(),
       }));
+
       setMessages(normalized);
     });
 
@@ -101,24 +120,21 @@ function Chat() {
 
   useLayoutEffect(() => {
     const el = containerRef.current;
+
     if (!el) return;
 
-    const lastMessage = messages[messages.length - 1];
-    if (!lastMessage) return;
+    el.scrollTop = el.scrollHeight;
 
-    const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 100;
-
-    if (lastMessage.isMine || isNearBottom) {
-      requestAnimationFrame(() => {
-        el.scrollTop = el.scrollHeight;
-      });
-    }
+    setReady(true);
   }, [messages]);
 
   const handleRoomChange = async (newRoom: string) => {
     if (!connection) return;
+
+    setReady(false);
     setMessages([]);
     setRoom(newRoom);
+
     await connection.invoke("JoinRoom", newRoom);
     await connection.invoke("LoadRoomHistory", newRoom);
   };
@@ -163,19 +179,83 @@ function Chat() {
     }
   };
 
+  const formatMessageTime = (date?: string) => {
+  if (!date) return "";
+
+  const d = new Date(date);
+  const now = new Date();
+
+  const isToday =
+    d.toDateString() === now.toDateString();
+
+  const yesterday = new Date();
+  yesterday.setDate(now.getDate() - 1);
+
+  const isYesterday =
+    d.toDateString() === yesterday.toDateString();
+
+  const time = d.toLocaleTimeString([], {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+
+  if (isToday) {
+    return time;
+  }
+
+  if (isYesterday) {
+    return `Yesterday ${time}`;
+  }
+
+  return d.toLocaleString([], {
+    weekday: "short",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+};
+
+  const shouldShowTimestamp = (
+    current?: string,
+    previous?: string
+  ) => {
+    if (!current) return false;
+
+    if (!previous) return true;
+
+    const currentDate = new Date(current);
+    const previousDate = new Date(previous);
+
+    const diff =
+      currentDate.getTime() -
+      previousDate.getTime();
+
+    const INTERVAL = 1000 * 60 * 30;
+
+    const isDifferentDay =
+      currentDate.toDateString() !==
+      previousDate.toDateString();
+
+    return diff >= INTERVAL || isDifferentDay;
+  };
+
   return (
     <div className="h-screen flex flex-col overflow-hidden">
       <Header />
 
       <div className="grid grid-cols-[280px_1fr] flex-1 min-h-0">
-        
+
         <div className="border-r border-gray-200 overflow-y-auto">
-          <div className="p-4 text-gray-500 font-bold uppercase tracking-wider text-xs">Channels</div>
-          <div className="px-4 text-lg"># {room}</div>
+          <div className="p-4 text-gray-500 font-bold uppercase tracking-wider text-xs">
+            Channels
+          </div>
+
+          <div className="px-4 text-lg">
+            # {room}
+          </div>
         </div>
 
         <div className="p-5 flex flex-col overflow-hidden bg-gray-100">
-          
+
           <div className="mb-4">
             <select
               className="bg-gray-800 text-white p-2 rounded-md outline-none"
@@ -192,56 +272,103 @@ function Chat() {
 
             <div
               ref={containerRef}
-              className="p-4 flex flex-col overflow-y-auto flex-1 scrollbar-thin bg-white"
+              className={`p-4 flex flex-col overflow-y-auto flex-1 scrollbar-thin bg-white transition-opacity duration-0 ${
+                ready ? "opacity-100" : "opacity-0"
+              }`}
             >
               <div className="flex-1" />
 
               {messages.map((m, i) => {
                 const prev = messages[i - 1];
                 const next = messages[i + 1];
+
                 const sameAsPrev = prev?.user === m.user;
                 const sameAsNext = next?.user === m.user;
 
-                let groupPos: "single" | "first" | "middle" | "last" = "single";
-                if (!sameAsPrev && sameAsNext)  groupPos = "first";
-                if (sameAsPrev && sameAsNext)   groupPos = "middle";
-                if (sameAsPrev && !sameAsNext)  groupPos = "last";
+                let groupPos:
+                  | "single"
+                  | "first"
+                  | "middle"
+                  | "last" = "single";
 
-                const bubbleRadius = getBubbleRadius(groupPos, !!m.isMine);
+                if (!sameAsPrev && sameAsNext)
+                  groupPos = "first";
 
-                const showAvatar = groupPos === "last" || groupPos === "single";
-                const marginBottom = sameAsNext ? "mb-1" : "mb-4";
+                if (sameAsPrev && sameAsNext)
+                  groupPos = "middle";
+
+                if (sameAsPrev && !sameAsNext)
+                  groupPos = "last";
+
+                const bubbleRadius = getBubbleRadius(
+                  groupPos,
+                  !!m.isMine
+                );
+
+                const showAvatar =
+                  groupPos === "last" ||
+                  groupPos === "single";
+
+                const marginBottom = sameAsNext
+                  ? "mb-1"
+                  : "mb-4";
 
                 return (
-                  <div
-                    key={i}
-                    className={`w-full flex ${marginBottom} ${
-                      m.isMine ? "justify-end" : "justify-start"
-                    }`}
-                  >
-                    <div className={`flex items-end gap-4 ${m.isMine ? "flex-row-reverse" : ""}`}>
-                      <div className="w-8 h-8 flex-shrink-0">
-                        {showAvatar && (
-                          <Avatar
-                            name={m.user ?? "Unknown"}
-                            imageUrl={m.avatar}
-                          />
-                        )}
-                      </div>
+                  <div key={i} className="w-full">
 
-                      <div className={`flex flex-col items-${m.isMine ? "end" : "start"}`}>
-                        <div
-                          className={`px-4 py-2 text-[15px] max-w-xs break-all ${
-                            m.isMine
-                              ? "bg-[#13CF13] text-white"
-                              : "bg-gray-100 text-black shadow-sm"
-                          }`}
-                          style={{ borderRadius: bubbleRadius }}
-                        >
-                          {m.text}
+                    {shouldShowTimestamp(
+                      m.createdAt,
+                      prev?.createdAt
+                    ) && (
+                      <div className="flex justify-center my-3">
+                        <div className="text-[13px] text-gray-500 font-medium">
+                          {formatMessageTime(m.createdAt)}
                         </div>
                       </div>
+                    )}
 
+                    <div
+                      className={`w-full flex ${marginBottom} ${
+                        m.isMine
+                          ? "justify-end"
+                          : "justify-start"
+                      }`}
+                    >
+                      <div
+                        className={`flex items-end gap-4 ${
+                          m.isMine
+                            ? "flex-row-reverse"
+                            : ""
+                        }`}
+                      >
+                        <div className="w-8 h-8 flex-shrink-0">
+                          {showAvatar && (
+                            <Avatar
+                              name={m.user ?? "Unknown"}
+                              imageUrl={m.avatar}
+                            />
+                          )}
+                        </div>
+
+                        <div
+                          className={`flex flex-col items-${
+                            m.isMine ? "end" : "start"
+                          }`}
+                        >
+                          <div
+                            className={`px-4 py-2 text-[15px] max-w-xs break-all ${
+                              m.isMine
+                                ? "bg-[#13CF13] text-white"
+                                : "bg-gray-100 text-black shadow-sm"
+                            }`}
+                            style={{
+                              borderRadius: bubbleRadius,
+                            }}
+                          >
+                            {m.text}
+                          </div>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 );
@@ -264,12 +391,15 @@ function Chat() {
             </div>
 
             <div className="p-3 border-white/10 bg-white">
+
               {error && (
                 <div className="text-red-500 text-sm px-2 pb-2">
                   {error}
                 </div>
               )}
+
               <div className="grid grid-cols-[1fr_auto] items-end rounded-[18px] bg-gray-100">
+
                 <div
                   ref={inputRef}
                   contentEditable
@@ -291,41 +421,71 @@ function Chat() {
                     }
                   }}
                   onKeyDown={(e) => {
-                    if (e.key === "Enter" && !e.shiftKey) {
+                    if (
+                      e.key === "Enter" &&
+                      !e.shiftKey
+                    ) {
                       e.preventDefault();
+
                       handleSubmit();
+
                       e.currentTarget.textContent = "";
                     }
                   }}
-                  className="caret-blue-500 text-gray-800 font-medium max-h-[200px] 
-                  text-[15px] px-3 py-2 outline-none empty:before:content-[attr(aria-placeholder)] 
-                  empty:before:text-gray-400 break-words whitespace-pre-wrap overflow-y-auto leading-tight"
+                  className="
+                    caret-blue-500
+                    text-gray-800
+                    font-medium
+                    max-h-[200px]
+                    text-[15px]
+                    px-3
+                    py-2
+                    outline-none
+                    empty:before:content-[attr(aria-placeholder)]
+                    empty:before:text-gray-400
+                    break-words
+                    whitespace-pre-wrap
+                    overflow-y-auto
+                    leading-tight
+                  "
                 />
-                <div ref={pickerRef} className="relative">
-                 <div
-                    className="
-                      w-[36px] h-[36px]
-                      rounded-full cursor-pointer
-                      grid justify-center items-center
 
+                <div
+                  ref={pickerRef}
+                  className="relative"
+                >
+                  <div
+                    className="
+                      w-[36px]
+                      h-[36px]
+                      rounded-full
+                      cursor-pointer
+                      grid
+                      justify-center
+                      items-center
                       hover:bg-gray-300/40
                       active:bg-gray-300/70
                       focus:bg-gray-300/70
-
-                      transition duration-100
+                      transition
+                      duration-100
                       select-none
                     "
-                    onClick={() => setShowPicker(prev => !prev)}
+                    onClick={() =>
+                      setShowPicker((prev) => !prev)
+                    }
                   >
                     😀
                   </div>
+
                   <EmojiPicker
                     onSelect={handleEmoji}
                     isOpened={showPicker}
                   />
                 </div>
+
               </div>
             </div>
+
           </div>
         </div>
       </div>
@@ -334,4 +494,3 @@ function Chat() {
 }
 
 export default Chat;
-
